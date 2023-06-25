@@ -15,8 +15,8 @@ RUN apt install -y git python3 python3-pip ffmpeg python3-requests python3-setup
 RUN python3 setup.py install
 
 # Define environment variable as placeholder variables
-ENV SPOTIPY_CLIENT_ID=7bd9f18046b4410fa5954892821a3b84
-ENV SPOTIPY_CLIENT_SECRET=0f9a242bf5f54b30a4dda07c044917b1
+ENV SPOTIPY_CLIENT_ID=
+ENV SPOTIPY_CLIENT_SECRET=
 
 # Execute savify when container is started
 ENTRYPOINT ["/savify/savespotify"]
