@@ -2,6 +2,7 @@
 
 argum="$*"
 dir=/output/Music
+easyMode=false
 if ! [ "$argum" == *" -g "* ]; then
 	useFolderStruct="true"
 else
@@ -11,6 +12,7 @@ fi
 if [ $# -eq 0 ]; then
 	echo "Easy Mode"
 	read -p "Enter Spotify URL > " url
+	easyMode=true
 else
 	url=${@: -1}
 	argum=${*%${!#}}
@@ -31,7 +33,10 @@ if [ "$useFolderStruct" = "true" ]; then
 	elif grep -q "artist" <<< "$url"; then
 		TYPE="artist"
 		dir=$dir/Artists
-		argum="$argum -g %artist%/%album% -a -s single"
+		argum="$argum -g %artist%/%album%"
+		if [ "$easyMode" = true ]; then
+			argum=$"$argum -a -s single "
+		fi
 	elif  grep -q "album" <<< "$url"; then
 		TYPE="album"
 		dir=$dir/Artists

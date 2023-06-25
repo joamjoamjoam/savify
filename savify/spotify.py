@@ -32,6 +32,8 @@ class Spotify:
                     tracks = list()
                     if len(skip_album_types) > 0:
                         albums = [ album for album in albums if not album["album_type"] in skip_album_types ]
+                    if min_tracks > 0:
+                        albums = [ album for album in albums if album["total_tracks"] >= min_tracks]
                     for album in albums:
                         tracks.extend(_pack_album(self.sp.album(album['id'])))
 
@@ -43,7 +45,7 @@ class Spotify:
         else:
             return list()
 
-    def link(self, query, artist_albums: bool = False, skip_album_types: list = []) -> list:
+    def link(self, query, artist_albums: bool = False, skip_album_types: list = [], min_tracks: int = 0) -> list:
         try:
             if 'track' in query:
                 return [Track(self.sp.track(query))]
@@ -66,6 +68,8 @@ class Spotify:
                     tracks = list()
                     if len(skip_album_types) > 0:
                         albums = [ album for album in albums if not album["album_type"] in skip_album_types ]
+                    if min_tracks > 0:
+                        albums = [ album for album in albums if album["total_tracks"] >= min_tracks]
                     for album in albums:
                         tracks.extend(_pack_album(self.sp.album(album['id'])))
 

@@ -63,6 +63,13 @@ def validate_confidence_interval(_ctx, _param, value):
             raise Exception('')
     except:
         raise click.BadParameter('Confidence Internal must be between 0 (matches any) and 100 (matches exact only)')
+    
+def validate_min_tracks(_ctx, _param, value):
+    try:
+        ci = int(value)
+        return ci
+    except:
+        raise click.BadParameter('Confidence Internal must be between 0 (matches any) and 100 (matches exact only)')
 
 
 
@@ -81,11 +88,13 @@ def validate_skip_album_types(_ctx, _param, value):
         raise click.BadParameter('Skip Album Type must be in the form x or x,x,x... where x in [single, album, compilation]')
 
 
-def guided_cli(type, quality, format, output, group, path, m3u, artist_albums, skip_cover_art, skip_album_types, confidence_interval):
+def guided_cli(type, quality, format, output, group, path, m3u, artist_albums, skip_cover_art, skip_album_types, confidence_interval, min_tracks, remove_incomplete_albums):
     choice = ''
     options = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10']
     errors = []
     confidence_interval = 0.0
+    min_tracks = 0
+    remove_incomplete_albums = False
     while not choice or choice.lower() in options:
         show_banner()
         print('    Options\t\tChoices\t\t\t\t\t\tSelected\n--------------------------------------------------------'
@@ -174,7 +183,7 @@ def guided_cli(type, quality, format, output, group, path, m3u, artist_albums, s
 
     query = choice
     show_banner()
-    return type, quality, format, output, group, path, m3u, query, artist_albums, skip_cover_art, skip_album_types, confidence_interval
+    return type, quality, format, output, group, path, m3u, query, artist_albums, skip_cover_art, skip_album_types, confidence_interval, min_tracks, remove_incomplete_albums
 
 
 @click.command(name='Savify', context_settings=dict(allow_extra_args=True, ignore_unknown_options=True))
@@ -195,13 +204,15 @@ def guided_cli(type, quality, format, output, group, path, m3u, artist_albums, s
 @click.option('-a', '--artist-albums', is_flag=True, help='Download all artist songs and albums'
                                                           ', not just top 10 songs.')
 @click.option('-c', '--confidence-interval', default=0.0, callback=validate_confidence_interval, help='Confidence Interval Required when matching a track name to video title. Default is 0 (Always Match) 60 is a good starting point', type=click.STRING)
+@click.option('-m', '--min-tracks', default=0, callback=validate_min_tracks, help='When Paired with -a, set minimum number of tracks per album. All albums with less tracks are ignored', type=click.STRING)
 @click.option('-s', '--skip-album-types', default=None, callback=validate_skip_album_types, help=Choices.ALBUMTYPES, type=click.STRING)
 @click.option('--skip-cover-art', is_flag=True, help='Don\'t add cover art to downloaded song(s).')
 @click.option('--silent', is_flag=True, help='Hide all output to stdout, overrides verbosity level.')
+@click.option('--remove-incomplete-albums', is_flag=True, help='Removes Any ALbums that has any songs that couldnt be downloaded')
 @click.option('-v', '--verbose', count=True, help='Change the log verbosity level. [-v, -vv]')
 @click.argument('query', required=False)
 @click.pass_context
-def main(ctx, type, quality, format, output, group, path, m3u, artist_albums, verbose, silent, query, skip_cover_art, skip_album_types, confidence_interval):
+def main(ctx, type, quality, format, output, group, path, m3u, artist_albums, verbose, silent, query, skip_cover_art, skip_album_types, confidence_interval, min_tracks, remove_incomplete_albums):
     if not silent:
         show_banner()
         log_level = convert_log_level(verbose)
@@ -211,8 +222,8 @@ def main(ctx, type, quality, format, output, group, path, m3u, artist_albums, ve
     guided = False
     if not query:
         guided = True
-        type, quality, format, output, group, path, m3u, query, artist_albums, skip_cover_art, skip_album_types, confidence_interval = \
-            guided_cli(type, quality, format, output, group, path, m3u, artist_albums, skip_cover_art, skip_album_types, confidence_interval)
+        type, quality, format, output, group, path, m3u, query, artist_albums, skip_cover_art, skip_album_types, confidence_interval, min_tracks, remove_incomplete_albums =  \
+            guided_cli(type, quality, format, output, group, path, m3u, artist_albums, skip_cover_art, skip_album_types, confidence_interval, min_tracks, remove_incomplete_albums)
 
     path_holder = PathHolder(path, output)
     output_format = convert_format(format)
@@ -222,9 +233,10 @@ def main(ctx, type, quality, format, output, group, path, m3u, artist_albums, ve
     ydl_options = None if ctx is None or not len(ctx.args)/2 == 0 else  {ctx.args[i][2:]: ctx.args[i+1] for i in range(0, len(ctx.args), 2)}
     skip_album_types = [] if skip_album_types is None else skip_album_types.split(',')
     confidence_interval = 0.0 if confidence_interval is None else confidence_interval
+    min_tracks = 0 if min_tracks is None else min_tracks
 
-    print(f"Confidence is {confidence_interval}")
-
+    logger.info(f"Setting Confidence minimum to {round(confidence_interval * 100, 2)}%")
+    
     def setup(ffmpeg='ffmpeg'):
         return Savify(quality=quality, download_format=output_format, path_holder=path_holder, group=group,
                       skip_cover_art=skip_cover_art, logger=logger, ffmpeg_location=ffmpeg, ydl_options=ydl_options, skip_album_types=skip_album_types)
@@ -269,7 +281,7 @@ def main(ctx, type, quality, format, output, group, path, m3u, artist_albums, ve
         return 1
 
     try:
-        s.download(query, query_type=query_type, create_m3u=m3u, artist_albums=artist_albums, skip_album_types=skip_album_types, confidence_interval=confidence_interval)
+        s.download(query, query_type=query_type, create_m3u=m3u, artist_albums=artist_albums, skip_album_types=skip_album_types, confidence_interval=confidence_interval, min_tracks=min_tracks, remove_incomplete_albums=remove_incomplete_albums)
 
     except UrlNotSupportedError as ex:
         logger.error(ex.message)

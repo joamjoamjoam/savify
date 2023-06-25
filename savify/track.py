@@ -23,6 +23,7 @@ class Track:
         self.url = None
         self.id = None
         self.confidence_interval = confidence_interval
+        self.isExplicit = spotify_data['explicit'] if spotify_data is not None else False
 
         self.platform = Platform.SPOTIFY
         self.track_type = track_type
