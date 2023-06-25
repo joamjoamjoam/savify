@@ -14,7 +14,7 @@ class Spotify:
             self.sp = spotipy.Spotify(client_credentials_manager=SpotifyClientCredentials(
                 client_id=client_id, client_secret=client_secret))
 
-    def search(self, query, query_type=Type.TRACK, artist_albums: bool = False, skip_album_types: list = []) -> list:
+    def search(self, query, query_type=Type.TRACK, artist_albums: bool = False, skip_album_types: list = [], min_tracks: int = 0) -> list:
         results = self.sp.search(q=query, limit=1, type=query_type)
         if len(results[f'{query_type}s']['items']) > 0:
             if query_type == Type.TRACK:

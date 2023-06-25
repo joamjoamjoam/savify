@@ -180,7 +180,8 @@ class Savify:
         message = f'Download Finished!\n\tCompleted {len(queue) - len(failed_jobs)}/{len(queue)}' \
                   f' songs in {time.time() - start_time:.0f}s\n'
 
-        if len(failed_jobs) > 0:        
+        if len(failed_jobs) > 0:    
+            removingString = ""    
             if (query_type == Type.ARTIST or ("artist" in query.lower() and "open.spotify.com" in query.lower())) and artist_albums:
                 # Consolidate Albums
                 message += f"\n\t{queue[0].artists[0]}'s Album Completion\n"
@@ -194,7 +195,7 @@ class Savify:
                 passJobs = [str(x["track"]) for x in successful_jobs]
                 passString = ""
                 failString = ""
-                removingString = ""
+                
                 for album in albums:
                     passTracks = []
                     failTracks = []
@@ -225,15 +226,20 @@ class Savify:
                 
                 message += passString
                 message += failString
-                message += removingString
 
             else:
                 message += '\n\tFailed Tracks:\n'
                 for failed_job in failed_jobs:
                     message += f'\n\tSong:\t{str(failed_job["track"])}' \
                             f'\n\tReason:\t{failed_job["error"]}\n'
+                if remove_incomplete_albums and ((query_type == Type.ALBUM or ("album" in query.lower() and "open.spotify.com" in query.lower())) and artist_albums):
+                    try:
+                        shutil.rmtree(os.path.dirname(failed_jobs[0]["location"]))
+                        removingString += f"\tRemoved Incomplete Album: {failed_jobs[0]['track'].album_name}\n"
+                    except:
+                        pass
 
-
+            message += removingString
 
         #self.logger.info(message)
         for line in message.split('\n'):
@@ -245,8 +251,9 @@ class Savify:
 
     def _download(self, track: Track) -> dict:
         extractor = 'ytsearch5'
+        specialKeywords = ["live", "acoustic", "instrumental"]
         if track.platform == Platform.SPOTIFY:
-            query = f'{extractor}:{track.artists[0]} - {track.name} podcast' if track.track_type == Type.EPISODE else f'{extractor}:{str(track)} song {"explicit" if track.isExplicit else ""}'
+            query = f'{extractor}:{track.artists[0]} - {track.name} podcast' if track.track_type == Type.EPISODE else f'{extractor}:{str(track)} song {"explicit" if track.isExplicit else ""} {" ".join([ x for x in specialKeywords if x in track.name.lower()])}'
         else:
             query = ''
 
@@ -382,10 +389,12 @@ class Savify:
                             if selectedSong is not None:
                                 link = f"https://www.youtube.com/watch?v={selectedSong['id']}"
                                 self.logger.debug(f"Selected Video (CI:{track.confidence_interval}%): {selectedSong['fulltitle']} - {link}")
+                                
+
                             else:
                                 self.completed += 1
                                 status['returncode'] = 1
-                                status['error'] = f"No Matching Video Found using CI of {track.confidence_interval}% Best Match ({bestMatch[1]}): {bestMatch[0]}"
+                                status['error'] = f"No Matching Video Found using CI of {track.confidence_interval}% Best Match ({bestMatch[1]}%): {bestMatch[0]}"
                                 self.logger.error(f"Error Downloading {self.completed} / {self.queue_size} -> {str(track)} {'(Explicit)' if track.isExplicit else ''}")
                                 self.logger.error(f"No Matching Video Found using CI of {track.confidence_interval}% Best Match ({bestMatch[1]}): {bestMatch[0]}")
 
