@@ -2,7 +2,8 @@
 
 __all__ = ['Savify']
 
-import time
+import re
+import time, json
 from multiprocessing import cpu_count
 from multiprocessing.dummy import Pool as ThreadPool
 from pathlib import Path
@@ -12,7 +13,7 @@ from urllib.error import URLError
 import validators
 import tldextract
 import requests
-from youtube_dl import YoutubeDL
+from yt_dlp import YoutubeDL
 from ffmpy import FFmpeg, FFRuntimeError
 
 from .utils import PathHolder, safe_path_string, check_env, check_ffmpeg, check_file, create_dir, clean
@@ -48,7 +49,7 @@ class Savify:
     def __init__(self, api_credentials=None, quality=Quality.BEST, download_format=Format.MP3,
                  group=None, path_holder: PathHolder = None, retry: int = 3,
                  ydl_options: dict = None, skip_cover_art: bool = False, logger: Logger = None,
-                 ffmpeg_location: str = 'ffmpeg', skip_album_types=None) -> None:
+                 ffmpeg_location: str = 'ffmpeg', skip_album_types: list = None) -> None:
 
         self.download_format = download_format
         self.ffmpeg_location = ffmpeg_location
@@ -88,7 +89,7 @@ class Savify:
         from . import __version__
         current_ver = f'v{__version__}'
 
-        if latest_ver == current_ver:
+        if latest_ver == current_ver or True:
             self.logger.info('Savify is up to date!')
         else:
             self.logger.info('A new version of Savify is available, '
@@ -113,11 +114,11 @@ class Savify:
                 result = self.spotify.search(query, query_type=Type.PLAYLIST)
 
             elif query_type == Type.ARTIST:
-                result = self.spotify.search(query, query_type=Type.ARTIST, artist_albums=artist_albums)
+                result = self.spotify.search(query, query_type=Type.ARTIST, artist_albums=artist_albums, skip_album_types=skip_album_types)
 
         return result
 
-    def download(self, query, query_type=Type.TRACK, create_m3u=False, artist_albums: bool = False, skip_album_types: list = []) -> None:
+    def download(self, query, query_type=Type.TRACK, create_m3u=False, artist_albums: bool = False, skip_album_types: list = [], confidence_interval: float = 0.0) -> None:
         try:
             queue = self._parse_query(query, query_type=query_type, artist_albums=artist_albums, skip_album_types=skip_album_types)
             self.queue_size += len(queue)
@@ -127,6 +128,9 @@ class Savify:
         if not (len(queue) > 0):
             self.logger.info('Nothing found using the given query.')
             return
+
+        # set Confidence Interval for Tracks
+        for track in queue: track.confidence_interval = confidence_interval
 
         self.logger.info(f'Downloading {len(queue)} songs...')
         start_time = time.time()
@@ -184,9 +188,9 @@ class Savify:
         self.completed -= len(queue)
 
     def _download(self, track: Track) -> dict:
-        extractor = 'ytsearch'
+        extractor = 'ytsearch5'
         if track.platform == Platform.SPOTIFY:
-            query = track.url if track.track_type == Type.EPISODE else f'{extractor}:{str(track)} audio'
+            query = f'{extractor}:{track.artists[0]} - {track.name} podcast' if track.track_type == Type.EPISODE else f'{extractor}:{str(track)} song'
         else:
             query = ''
 
@@ -250,12 +254,55 @@ class Savify:
             options['ffmpeg_location'] = self.ffmpeg_location
 
         attempt = 0
-        while True:
+        while attempt < 5:
             attempt += 1
 
             try:
                 with YoutubeDL(options) as ydl:
-                    ydl.download([query])
+
+                    # Search First and Pick a Good URL
+                    link = query
+                    if track.platform == Platform.SPOTIFY:
+                        videos = ydl.extract_info(query, download=False)
+                        videos = ydl.sanitize_info(videos)
+                        if len(videos['entries']) > 0:
+                            videos = videos['entries']
+                            self.logger.debug(f"Found {len(videos)} videos for {query}")
+                            for video in videos: self.logger.debug(f"\t{video['fulltitle']} ({video['duration_string']}) - {video['id']}")
+                            
+                            selectedSong = None
+                            trackName = re.sub("[\(\[].*?[\)\]]", "", track.name)
+                            trackNameSplit = track.name.split(" - ")[0].split(' ')
+                            self.logger.debug(f"Strictly Searching for keywords {trackNameSplit}")
+                            kwMatches = 0
+                            bestMatch = ("", 0.0)
+                            for video in videos:
+                                kwMatches = 0
+                                if len(trackNameSplit) > 0:
+                                    for word in trackNameSplit:
+                                        if word.upper() in video['fulltitle'].upper():
+                                            kwMatches = kwMatches + len(word)
+                                confidence = (kwMatches / len("".join(trackNameSplit)))
+                                self.logger.debug(f"Video {video['fulltitle']} matches with {round(confidence * 100, 2)}% confidence interval")
+                                
+                                if confidence > bestMatch[1]:
+                                    bestMatch = (video['fulltitle'], round(confidence*100, 2))
+                                
+                                if confidence > track.confidence_interval:
+                                    selectedSong = video
+                                    break
+
+                            if selectedSong is not None:
+                                link = f"https://www.youtube.com/watch?v={selectedSong['id']}"
+                                self.logger.debug(f"Selected Video (CI:{track.confidence_interval  * 100}%): {selectedSong['fulltitle']} - {link}")
+                            else:
+                                status['returncode'] = 1
+                                status['error'] = f"No Matching Video Found using CI of {track.confidence_interval  * 100}% Best Match ({bestMatch[1]}): {bestMatch[0]}"
+                                self.logger.error(f"No Matching Video Found using CI of {track.confidence_interval  * 100}% Best Match ({bestMatch[1]}): {bestMatch[0]}")
+                                self.completed += 1
+                                return status
+
+                    ydl.download([link])
                     if check_file(Path(output_temp)):
                         break
 
@@ -283,15 +330,18 @@ class Savify:
             return status
 
         attempt = 0
-        while True:
+        while attempt < 5:
             attempt += 1
             cover_art_name = f'{track.album_name} - {track.artists[0]}'
 
             if cover_art_name in self.downloaded_cover_art:
                 cover_art = self.downloaded_cover_art[cover_art_name]
             else:
-                cover_art = self.path_holder.download_file(track.cover_art_url, extension='jpg')
-                self.downloaded_cover_art[cover_art_name] = cover_art
+                try:
+                    cover_art = self.path_holder.download_file(track.cover_art_url, extension='jpg')
+                    self.downloaded_cover_art[cover_art_name] = cover_art
+                except:
+                    pass
 
             ffmpeg = FFmpeg(executable=self.ffmpeg_location,
                             inputs={str(output_temp): None, str(cover_art): None, },

@@ -1,0 +1,49 @@
+#!/bin/bash
+
+argum="$*"
+dir=/output/Music
+if ! [ "$argum" == *" -g "* ]; then
+	useFolderStruct="true"
+else
+	echo "Using your file structure"
+fi
+
+if [ $# -eq 0 ]; then
+	echo "Easy Mode"
+	read -p "Enter Spotify URL > " url
+else
+	url=${@: -1}
+	argum=${*%${!#}}
+fi
+
+echo "Using URL: $url"
+echo "Stripped Args are: $argum"
+
+if [ "$useFolderStruct" = "true" ]; then
+	mkdir "$dir" &> /dev/null || true
+	mkdir "$dir/Playlists" &> /dev/null || true
+	mkdir "$dir/Artists" &> /dev/null || true
+	TYPE="artist"
+	if  grep -q "playlist" <<< "$url"; then
+		TYPE="playlist"
+		dir=$dir/Playlists
+		argum="$argum -m -g %playlist%"
+	elif grep -q "artist" <<< "$url"; then
+		TYPE="artist"
+		dir=$dir/Artists
+		argum="$argum -g %artist%/%album% -a -s single"
+	elif  grep -q "album" <<< "$url"; then
+		TYPE="album"
+		dir=$dir/Artists
+		argum="$argum -g %artist%/%album%"
+	elif  grep -q "track" <<< "$url"; then
+		TYPE="track"
+		dir=$dir/Artists
+		argum="$argum -g %artist%/%album%"
+	fi
+
+	echo "Downloading $TYPE songs to $dir using arguments $argum $url"
+fi
+
+echo "savify -o $dir $argum $url"
+savify -o $dir $argum $url

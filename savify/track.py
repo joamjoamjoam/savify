@@ -12,7 +12,7 @@ class Track:
         except KeyError:
             setattr(self, name, default)
 
-    def __init__(self, spotify_data, track_type=Type.TRACK) -> None:
+    def __init__(self, spotify_data, track_type=Type.TRACK, confidence_interval=0.0) -> None:
         self.album_track_count = None
         self.track_number = None
         self.release_date = None
@@ -22,6 +22,7 @@ class Track:
         self.uri = None
         self.url = None
         self.id = None
+        self.confidence_interval = confidence_interval
 
         self.platform = Platform.SPOTIFY
         self.track_type = track_type

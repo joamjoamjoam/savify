@@ -52,8 +52,18 @@ def get_choice() -> str:
 
 
 def show_banner() -> None:
-    click.clear()
     click.echo(BANNER)
+
+def validate_confidence_interval(_ctx, _param, value):
+    try:
+        ci = float(value) / 100
+        if ci >= 0 or ci <= 1:
+            return ci
+        else:
+            raise Exception('')
+    except:
+        raise click.BadParameter('Confidence Internal must be between 0 (matches any) and 100 (matches exact only)')
+
 
 
 def validate_group(_ctx, _param, value):
@@ -71,10 +81,11 @@ def validate_skip_album_types(_ctx, _param, value):
         raise click.BadParameter('Skip Album Type must be in the form x or x,x,x... where x in [single, album, compilation]')
 
 
-def guided_cli(type, quality, format, output, group, path, m3u, artist_albums, skip_cover_art, skip_album_types):
+def guided_cli(type, quality, format, output, group, path, m3u, artist_albums, skip_cover_art, skip_album_types, confidence_interval):
     choice = ''
     options = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10']
     errors = []
+    confidence_interval = 0.0
     while not choice or choice.lower() in options:
         show_banner()
         print('    Options\t\tChoices\t\t\t\t\t\tSelected\n--------------------------------------------------------'
@@ -163,7 +174,7 @@ def guided_cli(type, quality, format, output, group, path, m3u, artist_albums, s
 
     query = choice
     show_banner()
-    return type, quality, format, output, group, path, m3u, query, artist_albums, skip_cover_art, skip_album_types
+    return type, quality, format, output, group, path, m3u, query, artist_albums, skip_cover_art, skip_album_types, confidence_interval
 
 
 @click.command(name='Savify', context_settings=dict(allow_extra_args=True, ignore_unknown_options=True))
@@ -183,13 +194,14 @@ def guided_cli(type, quality, format, output, group, path, m3u, artist_albums, s
 @click.option('-m', '--m3u', is_flag=True, help='Create an M3U playlist file for your download.')
 @click.option('-a', '--artist-albums', is_flag=True, help='Download all artist songs and albums'
                                                           ', not just top 10 songs.')
+@click.option('-c', '--confidence-interval', default=0.0, callback=validate_confidence_interval, help='Confidence Interval Required when matching a track name to video title. Default is 0 (Always Match) 60 is a good starting point', type=click.STRING)
 @click.option('-s', '--skip-album-types', default=None, callback=validate_skip_album_types, help=Choices.ALBUMTYPES, type=click.STRING)
 @click.option('--skip-cover-art', is_flag=True, help='Don\'t add cover art to downloaded song(s).')
 @click.option('--silent', is_flag=True, help='Hide all output to stdout, overrides verbosity level.')
 @click.option('-v', '--verbose', count=True, help='Change the log verbosity level. [-v, -vv]')
 @click.argument('query', required=False)
 @click.pass_context
-def main(ctx, type, quality, format, output, group, path, m3u, artist_albums, verbose, silent, query, skip_cover_art, skip_album_types):
+def main(ctx, type, quality, format, output, group, path, m3u, artist_albums, verbose, silent, query, skip_cover_art, skip_album_types, confidence_interval):
     if not silent:
         show_banner()
         log_level = convert_log_level(verbose)
@@ -199,16 +211,19 @@ def main(ctx, type, quality, format, output, group, path, m3u, artist_albums, ve
     guided = False
     if not query:
         guided = True
-        type, quality, format, output, group, path, m3u, query, artist_albums, skip_cover_art, skip_album_types = \
-            guided_cli(type, quality, format, output, group, path, m3u, artist_albums, skip_cover_art, skip_album_types)
+        type, quality, format, output, group, path, m3u, query, artist_albums, skip_cover_art, skip_album_types, confidence_interval = \
+            guided_cli(type, quality, format, output, group, path, m3u, artist_albums, skip_cover_art, skip_album_types, confidence_interval)
 
     path_holder = PathHolder(path, output)
     output_format = convert_format(format)
     query_type = convert_type(type)
     quality = convert_quality(quality)
     logger = Logger(path_holder.data_path, log_level)
-    ydl_options = {ctx.args[i][2:]: ctx.args[i+1] for i in range(0, len(ctx.args), 2)}
+    ydl_options = None if ctx is None or not len(ctx.args)/2 == 0 else  {ctx.args[i][2:]: ctx.args[i+1] for i in range(0, len(ctx.args), 2)}
     skip_album_types = [] if skip_album_types is None else skip_album_types.split(',')
+    confidence_interval = 0.0 if confidence_interval is None else confidence_interval
+
+    print(f"Confidence is {confidence_interval}")
 
     def setup(ffmpeg='ffmpeg'):
         return Savify(quality=quality, download_format=output_format, path_holder=path_holder, group=group,
@@ -254,7 +269,7 @@ def main(ctx, type, quality, format, output, group, path, m3u, artist_albums, ve
         return 1
 
     try:
-        s.download(query, query_type=query_type, create_m3u=m3u, artist_albums=artist_albums, skip_album_types=skip_album_types)
+        s.download(query, query_type=query_type, create_m3u=m3u, artist_albums=artist_albums, skip_album_types=skip_album_types, confidence_interval=confidence_interval)
 
     except UrlNotSupportedError as ex:
         logger.error(ex.message)

@@ -96,6 +96,8 @@ class PathHolder:
         file_path = self.get_temp_dir() / str(uuid1())
         if extension is not None:
             file_path = file_path.with_suffix(f'.{extension}')
-
-        urlretrieve(url, str(file_path))
+        try:
+            urlretrieve(url, str(file_path))
+        except:
+            pass
         return file_path
